@@ -25,7 +25,7 @@
 enum class OrderType {
     GoodTillCancel, // stays in the orderbook until executed
     FillAndKill, // fill as much as possible and then cancel the order
-	FillOrKill // if it can be filled fully, execute it, otherwise, cancel it
+	FillOrKill // if it can be filled fully, execute it, otherwise, cancel it (NOT IMPLEMENTED YET)
 };
 
 using Price = std::int32_t;
