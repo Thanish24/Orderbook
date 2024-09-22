@@ -33,3 +33,5 @@
 
 # VS code
 .vs
+.vscode
+.json

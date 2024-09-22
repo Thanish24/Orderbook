@@ -18,16 +18,14 @@
 #include <variant>
 #include <optional>
 #include <tuple>
-#include <format>
+#include <string>
+
+#include "Side.h"
 
 enum class OrderType {
     GoodTillCancel, // stays in the orderbook until executed
-    FillAndKill // if it cant be filled immediately, cancel it
-};
-
-enum class Side {
-    Buy,
-    Sell
+    FillAndKill, // fill as much as possible and then cancel the order
+	FillOrKill // if it can be filled fully, execute it, otherwise, cancel it
 };
 
 using Price = std::int32_t;
@@ -72,6 +70,7 @@ class Order {
         { }
 
         OrderId GetOrderId() const { return orderId_; }
+        OrderType GetOrderType() const { return orderType_; }
         Side GetSide() const { return side_; }
         Price GetPrice() const { return price_; }
         Quantity GetInitialQuantity() const { return initialQuantity_; }
@@ -82,7 +81,10 @@ class Order {
  
         void Fill(Quantity quantity) {
             if (quantity > GetRemainingQuantity()) {
-                throw std::logic_error(std::format("Order ({}) cannot be filled for more than its remaining quantity.", GetOrderId()));
+
+                
+
+                throw std::logic_error("Order " + std::to_string(GetOrderId()) + " cannot be filled for more than its remaining quantity");
             }
 
             remainingQuantity_ -= quantity;
@@ -98,23 +100,23 @@ class Order {
 
 };
 
-using OrderPointer std::shared_ptr<Order>;
+using OrderPointer = std::shared_ptr<Order>;
 using OrderPointers = std::list<OrderPointer>;
 
 class OrderModify { // this is the format for a request to modify an order. it is passed to the orderbook class 
 
     public:
         OrderModify(OrderId orderId, Side side, Price price, Quantity quantity)
-            : orderId_ { orderId; }
-            , price_ { price; }
-            , side_ { side; }
-            , quantity_ { quantity; }
+            : orderId_ { orderId }
+            , price_ { price }
+            , side_ { side }
+            , quantity_ { quantity }
         { }
 
         OrderId GetOrderId() const { return orderId_; }
-        OrderId GetPrice() const { return price_; }
-        OrderId GetSide() const { return side_; }
-        OrderId GetQuantity() const { return quantity_; }
+        Price GetPrice() const { return price_; }
+        Side GetSide() const { return side_; }
+        Quantity GetQuantity() const { return quantity_; }
 
         OrderPointer ToOrderPointer(OrderType type) const {
             
@@ -155,7 +157,7 @@ class Trade { // a trade contains info about the orders involved in the trade (b
 
 using Trades = std::vector<Trade>;
 
-Class Orderbook {
+class Orderbook {
     
     private:
         
@@ -190,24 +192,26 @@ Class Orderbook {
             Trades trades;
             trades.reserve(orders_.size()); // at max when orders are matched the entire orderbook can be cleared
 
-            while (true) { // goes accross levels
-                if (bids.empty() ||  asks.empty()) break;
+            while (true) { // goes across levels
+                if (bids_.empty() ||  asks_.empty()) break;
 
-                auto& [bidPrice, bids] = *bids.begin(); // get the level of lowest bids and the price of that level
-                auto& [askPrice, asks] = *asks.begin(); // get the level of the lowest ask and the price of that ask
+                auto& [bidPrice, bids] = *bids_.begin(); // get the level of lowest bids and the price of that level
+                auto& [askPrice, asks] = *asks_.begin(); // get the level of the lowest ask and the price of that ask
 
                 if (bidPrice < askPrice) break; // continue if people are asking to buy for equal to or more what people are selling for 
 
-                while (bids.size() && asks.size()) { // while the level has both bids and asks go through the level
+                while (!bids.empty() && !asks.empty()) { // while the level has both bids and asks go through the level
                     auto bid = bids.front(); // get the first bid in the level
                     auto ask = asks.front();
+
+                    Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
 
                     bid->Fill(quantity);
                     ask->Fill(quantity);
 
                     if (bid->IsFilled()) {
                         bids.pop_front();
-                        orders_.erase(bid->GetOrderId);
+                        orders_.erase(bid->GetOrderId());
                     }
 
                     if (ask->IsFilled()) {
@@ -217,7 +221,7 @@ Class Orderbook {
 
                     if (bids.empty()) bids_.erase(bidPrice);
 
-                    if (asks.empty()) asks.erase(askPrice);
+                    if (asks.empty()) asks_.erase(askPrice);
 
                     trades.push_back(
                         Trade( TradeInfo{ bid->GetOrderId(), bid->GetPrice(), quantity}, TradeInfo{ ask->GetOrderId(), ask->GetPrice(), quantity} ) // create an instance of structs for the trade made
@@ -254,7 +258,7 @@ Class Orderbook {
             if (orders_.contains(order->GetOrderId())) return { }; // you cant add an order to the orderbook thats already there
             
 
-            if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), Order->GetPrice())) return { }; // if the fill and kill wont work then dont add it
+            if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice())) return { }; // if the fill and kill wont work then dont add it
 
             OrderPointers::iterator iterator;
 
@@ -280,7 +284,7 @@ Class Orderbook {
             const auto& [order, orderIterator] = orders_.at(orderId);
             orders_.erase(orderId); // remove from order list
 
-            if (order->GetSide() == Side::sell) {
+            if (order->GetSide() == Side::Sell) {
                 auto price = order->GetPrice(); // get price of order to find level
                 auto& orders = asks_.at(price); // remove from level
                 orders.erase(orderIterator);
@@ -288,7 +292,7 @@ Class Orderbook {
             } else {
                 auto price = order->GetPrice();
                 auto& orders = bids_.at(price);
-                orders.erase(orderIterator)
+                orders.erase(orderIterator);
                 if (orders.empty()) asks_.erase(price);
             }
         }
@@ -297,9 +301,9 @@ Class Orderbook {
             
             if (!orders_.contains(order.GetOrderId())) return {};
 
-            const auto& [existingOrder, _] = orders_.at(order.GetOrderId); // gets the order 
+            const auto& [existingOrder, _] = orders_.at(order.GetOrderId()); // gets the order 
 
-            CancelOrder(existingOrder.GetOrderId());
+            CancelOrder(existingOrder->GetOrderId());
 
             return AddOrder(order.ToOrderPointer(existingOrder->GetOrderType()));
         }
@@ -312,12 +316,15 @@ Class Orderbook {
             bidInfos.reserve(orders_.size());
             askInfos.reserve(orders_.size());
 
-            auto CreateLevelInfos = [](Price price, const OrderPointers& Orders) { // lambda expression to create the infos, takes the price of the level and the orders of the level
+            auto CreateLevelInfos = [](Price price, const OrderPointers& orders) { // lambda expression to create the infos, takes the price of the level and the orders of the level
 
-                return LevelInfo{ price, std::accumulate(orders.begin(), orders.end()), (Quantity)0, // makes a struct for the level info 
-                [](std::size_t runningSum, const OrderPointer& order) // TODO: label functionality later
-                    { return runningSum + order->GetRemainingQuantity();}
-                };
+				Quantity levelQuantity = 0;
+
+				for (OrderPointer order : orders) {
+					levelQuantity += order->GetRemainingQuantity();
+				}
+
+                return LevelInfo{ price, levelQuantity};
 
             };
 
@@ -327,7 +334,7 @@ Class Orderbook {
             for (const auto& [price, orders] : asks_)
                 askInfos.push_back(CreateLevelInfos(price, orders));
 
-            return OrderbooksLevelInfos{ bidInfos, askInfos };
+            return OrderbookLevelInfos{ bidInfos, askInfos };
         }
 
 };
