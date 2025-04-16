@@ -12,11 +12,6 @@ using boost::asio::ip::tcp;
 using std::string;
 
 
-
-
-
-
-
 void orderBookConnection(tcp::socket &socket, Orderbook &orderbook) {
 
     try {
@@ -150,7 +145,7 @@ void orderBookConnection(tcp::socket &socket, Orderbook &orderbook) {
 
                 boost::asio::write(socket, boost::asio::buffer(displayLevelData(orderbook)), error);
 
-            } else if (message == "modify") {
+            } else if (message == "modify") { // not implemented yet
                 std::cout << "Recieved order modify" << std::endl;
 
                 boost::asio::write(socket, boost::asio::buffer("modified"), error);
